@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"sync"
@@ -58,6 +59,24 @@ func (this *Server) HandleConn(conn net.Conn) {
 
 	//广播用户上线消息
 	this.BroadCast(user, "已上线")
+
+	//接收客户端的消息
+	go func() {
+		buf := make([]byte, 4096)
+		for {
+			n, err := conn.Read(buf)
+			if n == 0 {
+				this.BroadCast(user, "下线了")
+				return
+			}
+			if err != nil && err != io.EOF {
+				log.Fatal(err)
+			}
+			//提取用户的消息，去除换行符
+			msg := string(buf[:n-1])
+			this.BroadCast(user, msg)
+		}
+	}()
 
 	//阻塞当前handler
 	select {}
