@@ -50,15 +50,46 @@ func (this *Server) BroadCast(user *User, msg string) {
 	this.Message <- sendMsg
 }
 
-func (this *Server) HandleConn(conn net.Conn) {
-	user := NewUser(conn)
-	//用户上线，加入onlinemap
+func (this *Server) UserOnline(user *User) {
 	this.mapLock.Lock()
 	this.OnLineMap[user.Name] = user
 	this.mapLock.Unlock()
 
 	//广播用户上线消息
 	this.BroadCast(user, "已上线")
+}
+
+func (this *Server) UserOffline(user *User) {
+	this.mapLock.Lock()
+	delete(this.OnLineMap, user.Name)
+	this.mapLock.Unlock()
+
+	//广播用户下线消息
+	this.BroadCast(user, "已下线")
+}
+
+func sendMsg(user *User, msg string) {
+	user.conn.Write([]byte(msg))
+}
+
+func (this *Server) DoMessage(user *User, msg string) {
+	if msg == "who" {
+		//查看当前在线用户都有哪些
+		this.mapLock.Lock()
+		for _, u := range this.OnLineMap {
+			onlineMsg := "[" + u.Name + "]\n"
+			sendMsg(user, onlineMsg)
+		}
+		this.mapLock.Unlock()
+	} else {
+		this.BroadCast(user, msg)
+	}
+}
+
+func (this *Server) HandleConn(conn net.Conn) {
+	user := NewUser(conn)
+	//用户上线，加入onlinemap
+	this.UserOnline(user)
 
 	//接收客户端的消息
 	go func() {
@@ -66,7 +97,7 @@ func (this *Server) HandleConn(conn net.Conn) {
 		for {
 			n, err := conn.Read(buf)
 			if n == 0 {
-				this.BroadCast(user, "下线了")
+				this.UserOffline(user)
 				return
 			}
 			if err != nil && err != io.EOF {
@@ -74,7 +105,7 @@ func (this *Server) HandleConn(conn net.Conn) {
 			}
 			//提取用户的消息，去除换行符
 			msg := string(buf[:n-1])
-			this.BroadCast(user, msg)
+			this.DoMessage(user, msg)
 		}
 	}()
 
