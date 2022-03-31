@@ -5,7 +5,9 @@ import (
 	"io"
 	"log"
 	"net"
+	"strings"
 	"sync"
+	"time"
 )
 
 type Server struct {
@@ -81,6 +83,20 @@ func (this *Server) DoMessage(user *User, msg string) {
 			sendMsg(user, onlineMsg)
 		}
 		this.mapLock.Unlock()
+	} else if len(msg) > 7 && msg[:7] == "rename|" {
+		newName := strings.Split(msg, "|")[1]
+		//去重
+		_, ok := this.OnLineMap[newName]
+		if ok {
+			sendMsg(user, "当前用户名已被占用\n")
+		} else {
+			this.mapLock.Lock()
+			delete(this.OnLineMap, user.Name)
+			this.OnLineMap[newName] = user
+			this.mapLock.Unlock()
+			user.Name = newName
+			sendMsg(user, "您已经成功更新用户名: "+newName+"\n")
+		}
 	} else {
 		this.BroadCast(user, msg)
 	}
@@ -90,6 +106,8 @@ func (this *Server) HandleConn(conn net.Conn) {
 	user := NewUser(conn)
 	//用户上线，加入onlinemap
 	this.UserOnline(user)
+
+	isAlive := make(chan bool)
 
 	//接收客户端的消息
 	go func() {
@@ -106,11 +124,23 @@ func (this *Server) HandleConn(conn net.Conn) {
 			//提取用户的消息，去除换行符
 			msg := string(buf[:n-1])
 			this.DoMessage(user, msg)
+
+			isAlive <- true
 		}
 	}()
 
-	//阻塞当前handler
-	select {}
+	for {
+		select {
+		case <-isAlive:
+			//仍有用户数据，用户仍活跃
+		case <-time.After(time.Second * 10):
+			sendMsg(user, "会话已超时自动退出")
+			close(user.C)
+			delete(this.OnLineMap, user.Name)
+			conn.Close()
+			return
+		}
+	}
 }
 
 //启动服务器
