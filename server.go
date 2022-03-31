@@ -97,6 +97,28 @@ func (this *Server) DoMessage(user *User, msg string) {
 			user.Name = newName
 			sendMsg(user, "您已经成功更新用户名: "+newName+"\n")
 		}
+	} else if len(msg) > 4 && msg[:3] == "to|" {
+		//私聊消息格式： to|username|message
+		//1. 获取对方用户名
+		splits := strings.Split(msg, "|")
+		remoteName := splits[1]
+		if remoteName == "" {
+			sendMsg(user, "消息格式不正确，请使用 \"to|username|message\"格式 \n")
+			return
+		}
+		//2. 根据用户名得到对方User对象
+		remoteUser, ok := this.OnLineMap[remoteName]
+		if !ok {
+			sendMsg(user, "改用户名不存在\n")
+			return
+		}
+		//3. 获取消息内容，发送
+		content := splits[2]
+		if content == "" {
+			sendMsg(user, "无消息内容，请重新输入\n")
+			return
+		}
+		sendMsg(remoteUser, user.Name+":"+content)
 	} else {
 		this.BroadCast(user, msg)
 	}
@@ -133,7 +155,7 @@ func (this *Server) HandleConn(conn net.Conn) {
 		select {
 		case <-isAlive:
 			//仍有用户数据，用户仍活跃
-		case <-time.After(time.Second * 10):
+		case <-time.After(time.Second * 300):
 			sendMsg(user, "会话已超时自动退出")
 			close(user.C)
 			delete(this.OnLineMap, user.Name)
